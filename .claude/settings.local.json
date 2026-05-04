@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Volume)",
+      "PowerShell(Get-PnpDevice | Where-Object { $_.FriendlyName -match \"log|trh|191|elitech|RC-\" -or $_.Name -match \"log|trh|191|elitech\" } | Format-List FriendlyName, Class, Status, InstanceId)",
+      "PowerShell(Get-PnpDevice -InstanceId \"USBSTOR\\\\DISK&VEN_&PROD_LOG_TRH_DISK&REV_0X00\\\\8&56B6708&0&DT191_2306090051&0\")",
+      "PowerShell(Get-PnpDeviceProperty)",
+      "WebSearch",
+      "PowerShell(python C:\\\\Users\\\\stefa\\\\Desktop\\\\TH-Tool\\\\listen.py)",
+      "PowerShell(python C:\\\\Users\\\\stefa\\\\Desktop\\\\TH-Tool\\\\descriptor.py)",
+      "PowerShell(python C:\\\\Users\\\\stefa\\\\Desktop\\\\TH-Tool\\\\probe2.py)",
+      "PowerShell(python C:\\\\Users\\\\stefa\\\\Desktop\\\\TH-Tool\\\\probe3.py)",
+      "PowerShell(python -u C:\\\\Users\\\\stefa\\\\Desktop\\\\TH-Tool\\\\probe5.py)",
+      "PowerShell(python -u C:\\\\Users\\\\stefa\\\\Desktop\\\\TH-Tool\\\\probe6.py)",
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match \"log|trh|cem|datalog|temp\" -or $_.MainWindowTitle -match \"log|trh\" } | Select-Object ProcessName, Id, MainWindowTitle | Format-Table -AutoSize)",
+      "PowerShell(python -u C:\\\\Users\\\\stefa\\\\Desktop\\\\TH-Tool\\\\trh.py info)"
+    ]
+  }
+}
