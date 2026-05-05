@@ -4,9 +4,10 @@ A small command-line tool for the **CEM DT-191A / RS-191A** USB temperature
 & humidity data logger (sold under various brands; HID `VID 0x2047 PID 0x0301`,
 USB mass-storage product string `LOG_TRH`).
 
-The vendor's Windows-only software is the usual flaky bundled affair. This is
-a clean, scriptable replacement: read live values, dump records to CSV/XLSX,
-and reconfigure the logger from the terminal.
+I built this because the vendor's bundled Windows software doesn't run
+properly under Windows 11 — leaving the logger effectively unusable on a
+modern machine. This is a clean, scriptable replacement: read live values,
+dump records to CSV/XLSX, and reconfigure the logger from the terminal.
 
 The HID protocol was reverse-engineered from USB captures — there is no
 vendor documentation behind any of this. **Use at your own risk.**
@@ -37,12 +38,13 @@ python trh.py set --sample 60 --unit c --time
 ```
 
 ### `info`
-Prints model, logger name, capacity, current sample rate, LED cycle, start
-mode, temperature unit, session start time, and a live reading.
+Prints model, logger name, max points, record count, current sample rate,
+total capacity (how long a full session lasts at that rate), LED cycle,
+start mode, temperature unit, session start time, and a live reading.
 
 ### `fetch PATH`
 Dumps all stored records. Output is CSV if `PATH` ends in `.csv`, else XLSX.
-Columns: `timestamp, elapsed_minutes, temperature_c, humidity_rh`.
+Columns: `timestamp, elapsed_minutes, elapsed_hours, elapsed_days, temperature_c, humidity_rh`.
 
 > **One-shot per power cycle.** The logger only streams its records out once
 > after each plug-in. If you've already fetched on this session, unplug and
@@ -51,7 +53,7 @@ Columns: `timestamp, elapsed_minutes, temperature_c, humidity_rh`.
 ### `set [options]`
 | flag | meaning |
 | --- | --- |
-| `--sample N` | sample interval — accepts `4s`, `60`, `5m`, `1h` |
+| `--sample N` | sample interval — accepts `4s`, `60`, `5m`, `1h` (see valid values below) |
 | `--led N`    | LED flash cycle in seconds |
 | `--start manual\|instant` | recording start mode |
 | `--unit c\|f` | display unit on the device |
@@ -60,6 +62,9 @@ Columns: `timestamp, elapsed_minutes, temperature_c, humidity_rh`.
 
 > **`set` resets the session and erases stored records.** Run `fetch` first
 > if you care about them.
+
+**Valid sample intervals:** `2s`–`30s` (every second), `1m`, `5m`, `15m`,
+`30m`, `1h`, `5h`, `12h`, `24h`.
 
 ## License
 

@@ -94,6 +94,18 @@ def fmt_duration(sec: int) -> str:
     if sec >=   60 and sec %   60 == 0: return f"{sec // 60}m"
     return f"{sec}s"
 
+def fmt_long_duration(sec: int) -> str:
+    """Format a span like 5994000s as '69d 8h'. Drops zero leading units."""
+    d, sec = divmod(sec, 86400)
+    h, sec = divmod(sec, 3600)
+    m, s   = divmod(sec, 60)
+    parts = []
+    if d: parts.append(f"{d}d")
+    if h: parts.append(f"{h}h")
+    if m: parts.append(f"{m}m")
+    if s or not parts: parts.append(f"{s}s")
+    return " ".join(parts)
+
 def get_model(h):
     """op=0x30 response: app[0] is the opcode echo, then ASCII model."""
     rs = request(h, bytes([0x30]))
@@ -186,6 +198,8 @@ def cmd_info(args):
     print(f"Max points:      {m['max_points']}")
     print(f"Record count:    {m['record_count']}")
     print(f"Sample rate:     {fmt_duration(m['sample_sec'])}")
+    print(f"Capacity:        {fmt_long_duration(m['max_points'] * m['sample_sec'])} "
+          f"at this sample rate")
     print(f"LED flash cycle: {m['led_cycle_sec']} s")
     print(f"Start mode:      {'Manual' if m['start_mode'] else 'Instant'}")
     print(f"Temp unit:       {'F' if m['unit'] else 'C'}")
@@ -227,10 +241,21 @@ def cmd_fetch(args):
     rows = []
     for i in range(n):
         t_raw, rh_raw = struct.unpack_from("<hh", raw, i * 4)
-        elapsed_min = i * m['sample_sec'] / 60.0
-        rows.append((start + i * interval, elapsed_min, t_raw / 100.0, rh_raw / 100.0))
+        elapsed_sec = i * m['sample_sec']
+        rows.append((start + i * interval,
+                     elapsed_sec / 60.0,
+                     elapsed_sec / 3600.0,
+                     elapsed_sec / 86400.0,
+                     t_raw / 100.0, rh_raw / 100.0))
 
-    headers = ["timestamp", "elapsed_minutes", "temperature_c", "humidity_rh"]
+    headers = ["timestamp", "elapsed_minutes", "elapsed_hours", "elapsed_days",
+               "temperature_c", "humidity_rh"]
+
+    # Use integer formatting for an elapsed unit only when every sample lands on
+    # a whole boundary; otherwise show enough precision to distinguish samples.
+    min_fmt  = "0"      if m['sample_sec'] %    60 == 0 else "0.00"
+    hour_fmt = "0"      if m['sample_sec'] %  3600 == 0 else "0.0000"
+    day_fmt  = "0"      if m['sample_sec'] % 86400 == 0 else "0.000000"
 
     if args.path.lower().endswith(".xlsx"):
         from openpyxl import Workbook
@@ -244,22 +269,33 @@ def cmd_fetch(args):
         ws.column_dimensions["B"].width = 16
         ws.column_dimensions["C"].width = 14
         ws.column_dimensions["D"].width = 14
-        # Integer-minute display when interval is a whole minute, else 2dp.
-        elapsed_fmt = "0" if m['sample_sec'] % 60 == 0 else "0.00"
+        ws.column_dimensions["E"].width = 14
+        ws.column_dimensions["F"].width = 14
         for cell in ws["A"][1:]:
             cell.number_format = "yyyy-mm-dd hh:mm:ss"
         for cell in ws["B"][1:]:
-            cell.number_format = elapsed_fmt
-        for cell in ws["C"][1:] + ws["D"][1:]:
+            cell.number_format = min_fmt
+        for cell in ws["C"][1:]:
+            cell.number_format = hour_fmt
+        for cell in ws["D"][1:]:
+            cell.number_format = day_fmt
+        for cell in ws["E"][1:] + ws["F"][1:]:
             cell.number_format = "0.00"
         wb.save(args.path)
     else:
+        # Translate openpyxl formats to Python format specs.
+        py_min  = ".0f" if min_fmt  == "0" else ".2f"
+        py_hour = ".0f" if hour_fmt == "0" else ".4f"
+        py_day  = ".0f" if day_fmt  == "0" else ".6f"
         with open(args.path, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(headers)
-            for ts, em, t, rh in rows:
-                em_str = f"{em:.0f}" if m['sample_sec'] % 60 == 0 else f"{em:.2f}"
-                w.writerow([ts.isoformat(sep=" "), em_str, f"{t:.2f}", f"{rh:.2f}"])
+            for ts, em, eh, ed, t, rh in rows:
+                w.writerow([ts.isoformat(sep=" "),
+                            format(em, py_min),
+                            format(eh, py_hour),
+                            format(ed, py_day),
+                            f"{t:.2f}", f"{rh:.2f}"])
 
     print(f"Wrote {n} records to {args.path}")
     print(f"  span: {start} ... {start + (n-1)*interval}  (every {m['sample_sec']}s)")
@@ -299,11 +335,14 @@ def cmd_set(args):
         new_meta = parse_meta(get_meta(h))
         nm = get_name(h)
         print(f"\nNow on device:")
+        capacity = new_meta['max_points'] * new_meta['sample_sec']
         print(f"  name={nm!r}  sample={new_meta['sample_sec']}s  "
               f"led={new_meta['led_cycle_sec']}s  "
               f"start={'Manual' if new_meta['start_mode'] else 'Instant'}  "
               f"unit={'F' if new_meta['unit'] else 'C'}  "
               f"clock={new_meta['start_time']}")
+        print(f"  capacity: {fmt_long_duration(capacity)} "
+              f"({new_meta['max_points']} samples × {fmt_duration(new_meta['sample_sec'])})")
     finally:
         h.close()
 
