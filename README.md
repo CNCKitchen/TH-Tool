@@ -46,9 +46,9 @@ start mode, temperature unit, session start time, and a live reading.
 Dumps all stored records. Output is CSV if `PATH` ends in `.csv`, else XLSX.
 Columns: `timestamp, elapsed_minutes, elapsed_hours, elapsed_days, temperature_c, humidity_rh`.
 
-> **One-shot per power cycle.** The logger only streams its records out once
-> after each plug-in. If you've already fetched on this session, unplug and
-> replug before fetching again.
+Records are read in 15-record pages, the same way the vendor software does it,
+so a fetch can be repeated any time and doesn't stop the recording. A full
+logger (20010 records) takes a few seconds.
 
 ### `set [options]`
 | flag | meaning |

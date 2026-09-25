@@ -2,7 +2,7 @@
 
 Subcommands:
   info                  show device info, current settings, live reading
-  fetch  PATH.csv       dump all records to CSV (one-shot per power cycle)
+  fetch  PATH.csv       dump all records to CSV
   set    [options]      change one or more settings
                         --led N                LED flash cycle in seconds
                         --sample N             sample rate in seconds
@@ -45,6 +45,30 @@ def request(h, payload, idle_ms=300, max_ms=2000):
     """Send a single-byte (or multi-byte) command and return all input reports."""
     h.write(make_req(payload))
     return read_until_idle(h, idle_ms=idle_ms, max_ms=max_ms)
+
+PAGE_RECORDS = 15  # records per op=0x02 page (60 data bytes / 4)
+
+def read_page(h, page, tries=3, timeout_ms=1000):
+    """op=0x02 paged record read, as used by the vendor app. Pages are 1-based.
+
+    Request app = [02 page_hi page_lo]. Reply app = [page_hi page_lo][records],
+    up to 15 x 4-byte records; past the last page the reply is [00 00 A1].
+    Returns the record bytes, or None past the end.
+
+    (op=0x01 bulk dump is not usable: the firmware keeps its byte count in 16
+    bits, so above 16384 records it only sends count % 16384 of them.)
+    """
+    for _ in range(tries):
+        h.write(make_req(bytes([0x02, page >> 8, page & 0xFF])))
+        deadline = time.time() + timeout_ms / 1000
+        while time.time() < deadline:
+            r = h.read(64, timeout_ms=50)
+            if not r or r[0] != RID: continue
+            app = bytes(r[2:2 + r[1]])
+            if app == b"\x00\x00\xa1": return None
+            if len(app) > 2 and ((app[0] << 8) | app[1]) == page:
+                return app[2:]
+    raise RuntimeError(f"no reply for page {page}")
 
 # ---------------------------------------------------------------- decoders
 
@@ -211,27 +235,26 @@ def cmd_fetch(args):
     h = open_dev()
     try:
         m = parse_meta(get_meta(h))
-        if m['record_count'] == 0:
+        count = m['record_count']
+        if count == 0:
             sys.exit("No records on device.")
-        h.write(make_req(bytes([0x01])))
-        reports = read_until_idle(h, idle_ms=400, max_ms=15000)
+        n_pages = -(-count // PAGE_RECORDS)
+        chunks = []
+        for p in range(1, n_pages + 1):
+            data = read_page(h, p)
+            if data is None: break
+            chunks.append(data)
+            if p % 50 == 0 or p == n_pages:
+                print(f"\r  reading page {p}/{n_pages}", end="", file=sys.stderr)
+        print(file=sys.stderr)
     finally:
         h.close()
 
-    pages = {}
-    for r in reports:
-        if r[0] != RID: continue
-        length = r[1]
-        app = r[2:2 + length]
-        if length == 3: continue   # trailer
-        seq = (app[0] << 8) | app[1]
-        pages[seq] = app[2:]
-
-    raw = b"".join(d for _, d in sorted(pages.items()))
-    if len(raw) % 4 or len(raw) // 4 != m['record_count']:
-        print(f"WARNING: got {len(raw)} bytes ({len(raw)//4} records), "
-              f"expected {m['record_count']}. Device may have run out of data, "
-              f"or you've already fetched once on this power cycle (one-shot).",
+    # The logger keeps recording during the fetch, so the last page may have
+    # grown since the meta read; stick to the count the start time refers to.
+    raw = b"".join(chunks)[:count * 4]
+    if len(raw) < count * 4:
+        print(f"WARNING: got {len(raw)//4} records, expected {count}.",
               file=sys.stderr)
 
     interval = datetime.timedelta(seconds=m['sample_sec'])
