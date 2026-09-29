@@ -10,6 +10,7 @@ Subcommands:
                         --unit  c|f            temperature display unit
                         --name STR             logger name (max ~16 chars)
                         --time                 sync device clock to host clock
+                        --yes                  skip the erase confirmation prompt
 """
 import argparse, hid, time, struct, sys, datetime, csv
 
@@ -105,6 +106,21 @@ def fmt_long_duration(sec: int) -> str:
     if m: parts.append(f"{m}m")
     if s or not parts: parts.append(f"{s}s")
     return " ".join(parts)
+
+def confirm(question: str) -> bool:
+    """Ask a yes/no question. Only an explicit 'y'/'yes' counts as consent."""
+    if not sys.stdin.isatty():
+        sys.exit("Refusing to erase records without confirmation "
+                 "(stdin is not a terminal); pass --yes to proceed.")
+    while True:
+        try:
+            ans = input(f"{question} [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+        if ans in ("y", "yes"):     return True
+        if ans in ("", "n", "no"):  return False
+        print("Please answer 'y' or 'n'.")
 
 def get_model(h):
     """op=0x30 response: app[0] is the opcode echo, then ASCII model."""
@@ -321,8 +337,14 @@ def cmd_set(args):
         settings_changing = bool(kwargs)
 
         if settings_changing:
+            m = parse_meta(meta_app)
             print("WARNING: settings-write resets the recording session and erases "
                   "records. Run 'fetch' first if you need them.", file=sys.stderr)
+            print(f"         {m['record_count']} record(s) currently on the device "
+                  f"(session started {m['start_time'].isoformat(sep=' ')}).",
+                  file=sys.stderr)
+            if not args.yes and not confirm("Erase them and write the new settings?"):
+                sys.exit("Aborted; nothing was written to the logger.")
             write_settings(h, meta_app, **kwargs)
             # op=0x03 wipes the logger name as a side effect — re-push it.
             write_name(h, new_name)
@@ -367,6 +389,8 @@ def main():
     ps.add_argument("--unit",   choices=["c", "f"])
     ps.add_argument("--name",   metavar="STR", help="logger name (<=16 ASCII chars)")
     ps.add_argument("--time",   action="store_true", help="sync device clock to host")
+    ps.add_argument("-y", "--yes", action="store_true",
+                    help="skip the confirmation prompt before erasing records")
 
     args = p.parse_args()
     {"info": cmd_info, "fetch": cmd_fetch, "set": cmd_set}[args.cmd](args)

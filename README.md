@@ -59,9 +59,25 @@ Columns: `timestamp, elapsed_minutes, elapsed_hours, elapsed_days, temperature_c
 | `--unit c\|f` | display unit on the device |
 | `--name STR` | logger name (≤ 16 ASCII chars) |
 | `--time`     | sync the device clock to the host clock |
+| `-y`, `--yes` | skip the confirmation prompt (for scripts) |
 
 > **`set` resets the session and erases stored records.** Run `fetch` first
 > if you care about them.
+
+Because the write is destructive, `set` shows how many records are on the
+device and asks for confirmation before touching it:
+
+```
+$ python trh.py set --sample 5m
+WARNING: settings-write resets the recording session and erases records. Run 'fetch' first if you need them.
+         2314 record(s) currently on the device (session started 2026-08-01 09:12:00).
+Erase them and write the new settings? [y/N] n
+Aborted; nothing was written to the logger.
+```
+
+Anything other than `y`/`yes` aborts. Pass `--yes` to skip the prompt in
+scripts; without it, a non-interactive run refuses rather than erasing
+silently. Changing only `--name` doesn't erase records and isn't prompted.
 
 **Valid sample intervals:** `2s`–`30s` (every second), `1m`, `5m`, `15m`,
 `30m`, `1h`, `5h`, `12h`, `24h`.
